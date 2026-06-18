@@ -1,37 +1,45 @@
+Este proyecto de control de hardware de lazo abierto esta desarrollado integramente en C++ bajo el paradigma de la Programacion Orientada a Objetos. 
+Integra un sensor de luz LDR con un filtro digital de mediana para comandar de forma autonoma el angulo de un servomotor. 
+La comunicacion concurrente se implementa estrictamente a traves de Colas de FreeRTOS.
 
-This directory is intended for project header files.
+El sistema rechaza variables compartidas; en su lugar, encapsula datos en mensajes fuertemente tipados. 
+El sensor toma ventanas de muestras, calcula la mediana para rechazar picos de ruido y envia la peticion al TaskManager. 
+El TaskManager procesa las entradas a traves de una maquina de estados estricta y orquesta el movimiento del actuador en modo rapido o lento.
 
-A header file is a file containing C declarations and macro definitions
-to be shared between several project source files. You request the use of a
-header file in your project source file (C, C++, etc) located in `src` folder
-by including it, with the C preprocessing directive `#include'.
+Preguntas de Analisis del Sistema
+1. Cual es la diferencia entre usar una variable global y una cola para comunicar datos?
+Las colas de FreeRTOS utilizan primitivas de sincronizacion internas que evitan condiciones de carrera, garantizando que el dato fluya integro del productor al consumidor, 
+a diferencia de una global desprotegida.
 
-```src/main.c
+2. Que tarea queda bloqueada cuando espera datos de una cola?
+La tarea que intenta leer la cola. Pasara a estado BLOCKED y cedera el procesador si la cola esta vacia, 
+despertando automaticamente en cuanto el dato este disponible.
 
-#include "header.h"
+3. Por que TaskManager debe concentrar las decisiones del sistema?
+Para cumplir con el Principio de Separacion de Responsabilidades. Si el control estuviera distribuido, existirian conflictos logicos y bloqueos. 
+El Task Manager funciona como el unico arbitro del estado de la maquina.
 
-int main (void)
-{
- ...
-}
-```
+4. Por que pvParameters es mas flexible que crear una funcion distinta por tarea?
+Convierte las funciones de tarea en plantillas parametrizables. Permite reutilizar logica comun para multiples puertos fisicos pasando las configuraciones como argumentos de creacion.
 
-Including a header file produces the same results as copying the header file
-into each source file that needs it. Such copying would be time-consuming
-and error-prone. With a header file, the related declarations appear
-in only one place. If they need to be changed, they can be changed in one
-place, and programs that include the header file will automatically use the
-new version when next recompiled. The header file eliminates the labor of
-finding and changing all the copies as well as the risk that a failure to
-find one copy will result in inconsistencies within a program.
+5. Que diferencia existe entre suspender una tarea y bloquearla esperando una cola?
+Bloquearse en una cola es una pausa voluntaria y reactiva; la tarea despierta por si sola cuando llega el dato. 
+Suspender una tarea es un estado inducido externamente; la tarea queda en letargo indefinido hasta que un tercero la reanude.
 
-In C, the convention is to give header files names that end with `.h'.
+6. Que efecto tiene aumentar el tamaño de la ventana del filtro de mediana?
+Mejora el rechazo a perturbaciones y ruido impulsivo, pero introduce una mayor latencia en la respuesta del sistema y aumenta el consumo de la memoria stack de la tarea.
 
-Read more about using header files in official GCC documentation:
+7. Por que un filtro de mediana rechaza picos mejor que un promedio simple?
+El promedio aritmetico es sensible a valores extremos y se sesga facilmente. La mediana ordena espacialmente las muestras, 
+dejando los picos atipicos en los extremos del arreglo para ignorarlos por completo, tomando solo el valor estadisticamente central.
 
-* Include Syntax
-* Include Operation
-* Once-Only Headers
-* Computed Includes
+8. Que ocurre si se presiona Start-operation mientras el servo esta en movimiento?
+No ocurre nada. El Task Manager suspende el bloque de deteccion del boton mientras el sistema esta en operacion, haciendo el circuito mecanicamente inmune a dobles pulsaciones.
 
-https://gcc.gnu.org/onlinedocs/cpp/Header-Files.html
+9. Como se garantiza que el boton de velocidad solo funcione durante la operacion?
+La tarea del boton arranca en estado suspendido. Unicamente recibe tiempo de ejecucion cuando el sistema entra en modo operativo, 
+asegurando que los eventos de cambio de velocidad no saturen las colas fuera de tiempo.
+
+10. Por que un constexpr en C++ es preferible a un define para constantes tipadas?
+Un define es una macro de preprocesador que realiza un reemplazo de texto ciego. constexpr es verificado en tiempo de compilacion por C++,
+forzando comprobacion de tipos de variables y respetando los alcances logicos, previniendo errores catastroficos.
